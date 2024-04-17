@@ -1,172 +1,115 @@
-#include <Wire.h>
-#include <SPI.h>
-#include <Adafruit_LSM9DS1.h>
-#include <Adafruit_Sensor.h>  // not used in this demo but required!
+#include "LSM6DSOXSensor.h"
+#include <Adafruit_MPL3115A2.h>
 
-// i2c
-Adafruit_LSM9DS1 lsm = Adafruit_LSM9DS1();
+Adafruit_MPL3115A2 mpl;
 
-#define LSM9DS1_SCK A5
-#define LSM9DS1_MISO 12
-#define LSM9DS1_MOSI A4
-#define LSM9DS1_XGCS 6
-#define LSM9DS1_MCS 5
-// You can also use software SPI
-//Adafruit_LSM9DS1 lsm = Adafruit_LSM9DS1(LSM9DS1_SCK, LSM9DS1_MISO, LSM9DS1_MOSI, LSM9DS1_XGCS, LSM9DS1_MCS);
-// Or hardware SPI! In this case, only CS pins are passed in
-//Adafruit_LSM9DS1 lsm = Adafruit_LSM9DS1(LSM9DS1_XGCS, LSM9DS1_MCS);
+// Declare LSM6DSOX sensor. Sensor address can have 2 values LSM6DSOX_I2C_ADD_L (corresponds to 0x6A I2C address) or LSM6DSOX_I2C_ADD_H (corresponds to 0x6B I2C address)
+// On Adafruit lsm6dsox sensor, LSM6DSOX_I2C_ADD_L is the default address
+LSM6DSOXSensor lsm6dsoxSensor = LSM6DSOXSensor(&Wire, LSM6DSOX_I2C_ADD_L);
 
-
-void setupSensor()
-{
-  // 1.) Set the accelerometer range
-  lsm.setupAccel(lsm.LSM9DS1_ACCELRANGE_2G, lsm.LSM9DS1_ACCELDATARATE_10HZ);
-  //lsm.setupAccel(lsm.LSM9DS1_ACCELRANGE_4G, lsm.LSM9DS1_ACCELDATARATE_119HZ);
-  //lsm.setupAccel(lsm.LSM9DS1_ACCELRANGE_8G, lsm.LSM9DS1_ACCELDATARATE_476HZ);
-  //lsm.setupAccel(lsm.LSM9DS1_ACCELRANGE_16G, lsm.LSM9DS1_ACCELDATARATE_952HZ);
-  
-  // 2.) Set the magnetometer sensitivity
-  lsm.setupMag(lsm.LSM9DS1_MAGGAIN_4GAUSS);
-  //lsm.setupMag(lsm.LSM9DS1_MAGGAIN_8GAUSS);
-  //lsm.setupMag(lsm.LSM9DS1_MAGGAIN_12GAUSS);
-  //lsm.setupMag(lsm.LSM9DS1_MAGGAIN_16GAUSS);
-
-  // 3.) Setup the gyroscope
-  lsm.setupGyro(lsm.LSM9DS1_GYROSCALE_245DPS);
-  //lsm.setupGyro(lsm.LSM9DS1_GYROSCALE_500DPS);
-  //lsm.setupGyro(lsm.LSM9DS1_GYROSCALE_2000DPS);
-}
-
-
-void setup() 
-{
+void setup() {
   Serial.begin(115200);
+  Wire.begin();
 
-  while (!Serial) {
-    delay(1); // will pause Zero, Leonardo, etc until serial console opens
-  }
-  
-  Serial.println("LSM9DS1 data read demo");
-  
-  // Try to initialise and warn if we couldn't detect the chip
-  if (!lsm.begin())
-  {
-    Serial.println("Oops ... unable to initialize the LSM9DS1. Check your wiring!");
-    while (1);
-  }
-  Serial.println("Found LSM9DS1 9DOF");
+  // Default clock is 100kHz. LSM6DSOX also supports 400kHz, let's use it
+  Wire.setClock(400000);
 
-  // helper to just set the default scaling we want, see above!
-  setupSensor();
+  // Init the sensor
+  lsm6dsoxSensor.begin();
+
+  // Enable accelerometer and gyroscope, and check success
+  if (lsm6dsoxSensor.Enable_X() == LSM6DSOX_OK && lsm6dsoxSensor.Enable_G() == LSM6DSOX_OK) {
+    Serial.println("Success enabling accelero and gyro");
+  } else {
+    Serial.println("Error enabling accelero and gyro");
+  }
+
+  // Read ID of device and check that it is correct
+  uint8_t id;
+  lsm6dsoxSensor.ReadID(&id);
+  if (id != LSM6DSOX_ID) {
+    Serial.println("Wrong ID for LSM6DSOX sensor. Check that device is plugged");
+  } else {
+    Serial.println("Receviced correct ID for LSM6DSOX sensor");
+  }
+
+  // Set accelerometer scale at +- 2G. Available values are +- 2, 4, 8, 16 G
+  lsm6dsoxSensor.Set_X_FS(2);
+
+  // Set gyroscope scale at +- 125 degres per second. Available values are +- 125, 250, 500, 1000, 2000 dps
+  lsm6dsoxSensor.Set_G_FS(125);
+
+
+  // Set Accelerometer sample rate to 208 Hz. Available values are +- 12.0, 26.0, 52.0, 104.0, 208.0, 416.0, 833.0, 1667.0, 3333.0, 6667.0 Hz
+  lsm6dsoxSensor.Set_X_ODR(208.0f);
+
+
+  // Set Gyroscope sample rate to 208 Hz. Available values are +- 12.0, 26.0, 52.0, 104.0, 208.0, 416.0, 833.0, 1667.0, 3333.0, 6667.0 Hz
+  lsm6dsoxSensor.Set_G_ODR(208.0f);
+
+
+
+  //*************************************************************
+  while(!Serial);
+  Serial.println("Adafruit_MPL3115A2 test!");
+
+  if (!mpl.begin()) {
+    Serial.println("Could not find sensor. Check wiring.");
+    while(1);
+  }
+
+  // set mode before starting a conversion
+  Serial.println("Setting mode to barometer (pressure).");
+  mpl.setMode(MPL3115A2_BAROMETER);
+
+
+
 }
 
-void loop() 
-{
-  lsm.read();  /* ask it to read in the data */ 
+void loop() {
 
-  /* Get a new sensor event */ 
-  sensors_event_t a, m, g, temp;
+  // Read accelerometer
+  uint8_t acceleroStatus;
+  lsm6dsoxSensor.Get_X_DRDY_Status(&acceleroStatus);
+  if (acceleroStatus == 1) { // Status == 1 means a new data is available
+    int32_t acceleration[3];
+    lsm6dsoxSensor.Get_X_Axes(acceleration);
+    // Plot data for each axis in mg
+    Serial.print("AccelerationX="); Serial.print(acceleration[0]); Serial.print("mg, AccelerationY="); Serial.print(acceleration[1]); Serial.print("mg, AccelerationZ="); Serial.print(acceleration[2]); Serial.println("mg");
+  }
 
-  lsm.getEvent(&a, &m, &g, &temp); 
+  // Read gyroscope
+  uint8_t gyroStatus;
+  lsm6dsoxSensor.Get_G_DRDY_Status(&gyroStatus);
+  if (gyroStatus == 1) { // Status == 1 means a new data is available
+    int32_t rotation[3];
+    lsm6dsoxSensor.Get_G_Axes(rotation);
+    // Plot data for each axis in milli degrees per second
+    Serial.print("RotationX="); Serial.print(rotation[0]); Serial.print("mdps, RotationY="); Serial.print(rotation[1]); Serial.print("mdps, RotationZ="); Serial.print(rotation[2]); Serial.println("mdps");
+  }
 
-  Serial.print("Accel X: "); Serial.print(a.acceleration.x); Serial.print(" m/s^2");
-  Serial.print("\tY: "); Serial.print(a.acceleration.y);     Serial.print(" m/s^2 ");
-  Serial.print("\tZ: "); Serial.print(a.acceleration.z);     Serial.println(" m/s^2 ");
+  // delay(10);
 
-  Serial.print("Mag X: "); Serial.print(m.magnetic.x);   Serial.print(" uT");
-  Serial.print("\tY: "); Serial.print(m.magnetic.y);     Serial.print(" uT");
-  Serial.print("\tZ: "); Serial.print(m.magnetic.z);     Serial.println(" uT");
+  // start a conversion
+  Serial.print("/********************************************************/");
+  Serial.println("Starting a conversion.");
+  mpl.startOneShot();
 
-  Serial.print("Gyro X: "); Serial.print(g.gyro.x);   Serial.print(" rad/s");
-  Serial.print("\tY: "); Serial.print(g.gyro.y);      Serial.print(" rad/s");
-  Serial.print("\tZ: "); Serial.print(g.gyro.z);      Serial.println(" rad/s");
+  // do something else while waiting
+  Serial.println("Counting number while waiting...");
+  int count = 0; 
+  while (!mpl.conversionComplete()) {
+    count++;
+  }
+  Serial.print("Done! Counted to "); Serial.println(count);
 
+  // now get results
+  Serial.print("Pressure = ");
+  Serial.println(mpl.getLastConversionResults(MPL3115A2_PRESSURE));
+  Serial.print("Temperature = ");
+  Serial.println(mpl.getLastConversionResults(MPL3115A2_TEMPERATURE));
   Serial.println();
-  delay(200);
-}
-#include <Wire.h>
-#include <SPI.h>
-#include <Adafruit_LSM9DS1.h>
-#include <Adafruit_Sensor.h>  // not used in this demo but required!
 
-// i2c
-Adafruit_LSM9DS1 lsm = Adafruit_LSM9DS1();
+  delay(1000);
 
-#define LSM9DS1_SCK A5
-#define LSM9DS1_MISO 12
-#define LSM9DS1_MOSI A4
-#define LSM9DS1_XGCS 6
-#define LSM9DS1_MCS 5
-// You can also use software SPI
-//Adafruit_LSM9DS1 lsm = Adafruit_LSM9DS1(LSM9DS1_SCK, LSM9DS1_MISO, LSM9DS1_MOSI, LSM9DS1_XGCS, LSM9DS1_MCS);
-// Or hardware SPI! In this case, only CS pins are passed in
-//Adafruit_LSM9DS1 lsm = Adafruit_LSM9DS1(LSM9DS1_XGCS, LSM9DS1_MCS);
-
-
-void setupSensor()
-{
-  // 1.) Set the accelerometer range
-  lsm.setupAccel(lsm.LSM9DS1_ACCELRANGE_2G, lsm.LSM9DS1_ACCELDATARATE_10HZ);
-  //lsm.setupAccel(lsm.LSM9DS1_ACCELRANGE_4G, lsm.LSM9DS1_ACCELDATARATE_119HZ);
-  //lsm.setupAccel(lsm.LSM9DS1_ACCELRANGE_8G, lsm.LSM9DS1_ACCELDATARATE_476HZ);
-  //lsm.setupAccel(lsm.LSM9DS1_ACCELRANGE_16G, lsm.LSM9DS1_ACCELDATARATE_952HZ);
-  
-  // 2.) Set the magnetometer sensitivity
-  lsm.setupMag(lsm.LSM9DS1_MAGGAIN_4GAUSS);
-  //lsm.setupMag(lsm.LSM9DS1_MAGGAIN_8GAUSS);
-  //lsm.setupMag(lsm.LSM9DS1_MAGGAIN_12GAUSS);
-  //lsm.setupMag(lsm.LSM9DS1_MAGGAIN_16GAUSS);
-
-  // 3.) Setup the gyroscope
-  lsm.setupGyro(lsm.LSM9DS1_GYROSCALE_245DPS);
-  //lsm.setupGyro(lsm.LSM9DS1_GYROSCALE_500DPS);
-  //lsm.setupGyro(lsm.LSM9DS1_GYROSCALE_2000DPS);
-}
-
-
-void setup() 
-{
-  Serial.begin(115200);
-
-  while (!Serial) {
-    delay(1); // will pause Zero, Leonardo, etc until serial console opens
-  }
-  
-  Serial.println("LSM9DS1 data read demo");
-  
-  // Try to initialise and warn if we couldn't detect the chip
-  if (!lsm.begin())
-  {
-    Serial.println("Oops ... unable to initialize the LSM9DS1. Check your wiring!");
-    while (1);
-  }
-  Serial.println("Found LSM9DS1 9DOF");
-
-  // helper to just set the default scaling we want, see above!
-  setupSensor();
-}
-
-void loop() 
-{
-  lsm.read();  /* ask it to read in the data */ 
-
-  /* Get a new sensor event */ 
-  sensors_event_t a, m, g, temp;
-
-  lsm.getEvent(&a, &m, &g, &temp); 
-
-  Serial.print("Accel X: "); Serial.print(a.acceleration.x); Serial.print(" m/s^2");
-  Serial.print("\tY: "); Serial.print(a.acceleration.y);     Serial.print(" m/s^2 ");
-  Serial.print("\tZ: "); Serial.print(a.acceleration.z);     Serial.println(" m/s^2 ");
-
-  Serial.print("Mag X: "); Serial.print(m.magnetic.x);   Serial.print(" uT");
-  Serial.print("\tY: "); Serial.print(m.magnetic.y);     Serial.print(" uT");
-  Serial.print("\tZ: "); Serial.print(m.magnetic.z);     Serial.println(" uT");
-
-  Serial.print("Gyro X: "); Serial.print(g.gyro.x);   Serial.print(" rad/s");
-  Serial.print("\tY: "); Serial.print(g.gyro.y);      Serial.print(" rad/s");
-  Serial.print("\tZ: "); Serial.print(g.gyro.z);      Serial.println(" rad/s");
-
-  Serial.println();
-  delay(200);
 }
