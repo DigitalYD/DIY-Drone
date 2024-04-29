@@ -14,7 +14,7 @@ void setup() {
   Serial.begin(57600);
   pinMode(13, OUTPUT); 
   digitalWrite(13, HIGH);
-  ReceiverInput.begin(14);
+  ReceiverInput.begin(15);
 }
 void loop() {
   read_receiver();
