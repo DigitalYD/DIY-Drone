@@ -47,6 +47,21 @@ float DRateYaw = 0;
 float AccX, AccY, AccZ;
 float AngleRoll, AnglePitch;
 
+// Kalman Filters
+float KalmanAngleRoll=0, KalmanUncertaintyAngleRoll=2*2;
+float KalmanAnglePitch=0, KalmanUncertaintyAnglePitch=2*2;
+float Kalman1DOutput[]={0,0};
+
+void kalman_1d(float KalmanState, float KalmanUncertainty, float KalmanInput, float KalmanMeasurement) {
+  KalmanState=KalmanState+0.004*KalmanInput;
+  KalmanUncertainty=KalmanUncertainty + 0.004 * 0.004 * 4 * 4;
+  float KalmanGain=KalmanUncertainty * 1/(1*KalmanUncertainty + 3 * 3);
+  KalmanState=KalmanState+KalmanGain * (KalmanMeasurement-KalmanState);
+  KalmanUncertainty=(1-KalmanGain) * KalmanUncertainty;
+  Kalman1DOutput[0]=KalmanState; 
+  Kalman1DOutput[1]=KalmanUncertainty;
+}
+
 void read_receiver(void)
 {
   ChannelNumber = ReceiverInput.available();
@@ -63,12 +78,6 @@ void read_barometer(void)
 {
   float altitude = baro.getAltitude();
 
-  // Serial.println("-----------------");
-  // Serial.print("altitude = ");
-  // Serial.print(altitude);
-  // Serial.println(" m");
-
-  // // delay(250);
 }
 
 void read_imu(void)
@@ -79,17 +88,19 @@ void read_imu(void)
   sensors_event_t temp;
 
   // there is a error in the template where the gyro and accelerometer values are swapped
-  sox.getEvent(&gyro, &accel, &temp);
+  sox.getEvent(&accel, &gyro, &temp);
 
   int16_t GyroX=gyro.gyro.x;
   int16_t GyroY=gyro.gyro.y;
   int16_t GyroZ=gyro.gyro.z;
+
   RateRoll=(float)GyroX;
   RatePitch=(float)GyroY;
   RateYaw=(float)GyroZ;
+
   AccX=(float)accel.acceleration.x;
-  AccY=(float)accel.acceleration.x;
-  AccZ=(float)accel.acceleration.x;
+  AccY=(float)accel.acceleration.y;
+  AccZ=(float)accel.acceleration.z;
   AngleRoll=atan(AccY/sqrt(AccX*AccX+AccZ*AccZ))*1/(3.142/180);
   AnglePitch=-atan(AccX/sqrt(AccY*AccY+AccZ*AccZ))*1/(3.142/180);
 
@@ -99,6 +110,11 @@ void read_imu(void)
   Serial.print(AccY);
   Serial.print(" Acceleration Z [g]= ");
   Serial.println(AccZ);
+
+  Serial.print("old AngleRoll: "); Serial.println(AngleRoll);
+  Serial.print("old AnglePitch: "); Serial.println(AnglePitch);
+  
+
 }
 
 // setting the motor control TX -> Teensy -> Motor
@@ -198,7 +214,7 @@ void setup()
 
   Serial.println("Barometer Found!");
 
-  baro.setAltitudeOffset(baro.getAltitudeOffset());
+  // baro.setAltitudeOffset(baro.getAltitudeOffset());
 
   // set sea level pressure = 1013.26 hPa
   baro.setSeaPressure(1013.26);
@@ -225,7 +241,7 @@ void setup()
   analogWriteResolution(12);
 
   // delay
-  delay(250);
+  // delay(250);
 
   // reading the throttle of the remote
   while (ReceiverValue[2] < 1020 || ReceiverValue[2] > 1050)
@@ -233,89 +249,106 @@ void setup()
     read_receiver();
     delay(4);
   }
+
+  timer = micros();
 }
 
 void loop()
 {
   // the barometer has delay issues
   // read_barometer();
-
+  read_imu();
   RateRoll -= CalibrationRoll;
   RatePitch -= CalibrationPitch;
   RateYaw -= CalibrationYaw;
 
-  read_imu();
-  controller();
+  // read_receiver();
+  // controller();
 
-  DesiredRoll = 0.15 * (ReceiverValue[0] - 1500);
-  DesiredPitch = 0.15 * (ReceiverValue[1] - 1500);
-  Throttle = ReceiverValue[2];
-  DesiredYaw = 0.15 * (ReceiverValue[3] - 1500);
+  kalman_1d(KalmanAngleRoll, KalmanUncertaintyAngleRoll, RateRoll, AngleRoll);
+  KalmanAngleRoll=Kalman1DOutput[0]; 
+  KalmanUncertaintyAngleRoll=Kalman1DOutput[1];
+  kalman_1d(KalmanAnglePitch, KalmanUncertaintyAnglePitch, RatePitch, AnglePitch);
+  KalmanAnglePitch=Kalman1DOutput[0]; 
+  KalmanUncertaintyAnglePitch=Kalman1DOutput[1];
+  Serial.print("Roll Angle [°] ");
+  Serial.print(KalmanAngleRoll);
+  Serial.print(" Pitch Angle [°] ");
+  Serial.println(KalmanAnglePitch);
 
-  ErrorRoll = DesiredRoll - RateRoll;
-  ErrorPitch = DesiredPitch - RatePitch;
-  ErrorYaw = DesiredYaw - RateYaw;
+  // DesiredRoll = 0.15 * (ReceiverValue[0] - 1500);
+  // DesiredPitch = 0.15 * (ReceiverValue[1] - 1500);
+  // Throttle = ReceiverValue[2];
+  // DesiredYaw = 0.15 * (ReceiverValue[3] - 1500);
 
-  pid_controller(ErrorRoll, PRateRoll, IRateRoll, DRateRoll, PrevErrorRoll, PrevITermRoll);
-  Roll = PIDReturn[0];
-  PrevErrorRoll = PIDReturn[1];
-  PrevITermRoll = PIDReturn[2];
-  pid_controller(ErrorPitch, PRatePitch, IRatePitch, DRatePitch, PrevITermPitch, PrevITermPitch);
-  Pitch = PIDReturn[0];
-  PrevErrorPitch = PIDReturn[1];
-  PrevITermPitch = PIDReturn[2];
-  pid_controller(ErrorYaw, PRateYaw, IRateYaw, DRateYaw, PrevErrorYaw, PrevITermYaw);
-  Yaw = PIDReturn[0];
-  PrevErrorYaw = PIDReturn[1];
-  PrevITermYaw = PIDReturn[2];
+  // ErrorRoll = DesiredRoll - RateRoll;
+  // ErrorPitch = DesiredPitch - RatePitch;
+  // ErrorYaw = DesiredYaw - RateYaw;
 
-  if (Throttle > 1800){
-    Throttle = 1800;
-  }
+  // pid_controller(ErrorRoll, PRateRoll, IRateRoll, DRateRoll, PrevErrorRoll, PrevITermRoll);
+  // Roll = PIDReturn[0];
+  // PrevErrorRoll = PIDReturn[1];
+  // PrevITermRoll = PIDReturn[2];
+  // pid_controller(ErrorPitch, PRatePitch, IRatePitch, DRatePitch, PrevITermPitch, PrevITermPitch);
+  // Pitch = PIDReturn[0];
+  // PrevErrorPitch = PIDReturn[1];
+  // PrevITermPitch = PIDReturn[2];
+  // pid_controller(ErrorYaw, PRateYaw, IRateYaw, DRateYaw, PrevErrorYaw, PrevITermYaw);
+  // Yaw = PIDReturn[0];
+  // PrevErrorYaw = PIDReturn[1];
+  // PrevITermYaw = PIDReturn[2];
 
-  motor1 = 1.024 * (Throttle - Roll - Pitch - Yaw);
-  motor2 = 1.024 * (Throttle - Roll + Pitch + Yaw);
-  motor3 = 1.024 * (Throttle + Roll + Pitch - Yaw);
-  motor4 = 1.024 * (Throttle + Roll - Pitch + Yaw);
+  // if (Throttle > 1400){
+  //   Throttle = 1400;
+  // }
+
+  // motor1 = 1.024 * (Throttle - Roll - Pitch - Yaw);
+  // motor2 = 1.024 * (Throttle - Roll + Pitch + Yaw);
+  // motor3 = 1.024 * (Throttle + Roll + Pitch - Yaw);
+  // motor4 = 1.024 * (Throttle + Roll - Pitch + Yaw);
   
-  if (motor1 > 1300)
-    motor1 = 1100;
+  // if (motor1 > 2000)
+  //   motor1 = 1999;
 
-  if (motor2 > 1300)
-    motor2 = 1100;
+  // if (motor2 > 2000)
+  //   motor2 = 1999;
 
-  if (motor3 > 1300)
-    motor3 = 1100;
+  // if (motor3 > 2000)
+  //   motor3 = 1999;
 
-  if (motor4 > 1300)
-    motor4 = 1100;
+  // if (motor4 > 2000)
+  //   motor4 = 1999;
 
-  int ThrottleIdle = 1180;
+  // int ThrottleIdle = 1180;
 
-  if (motor1 < ThrottleIdle)
-    motor1 = ThrottleIdle;
+  // if (motor1 < ThrottleIdle)
+  //   motor1 = ThrottleIdle;
 
-  if (motor2 < ThrottleIdle)
-    motor2 = ThrottleIdle;
+  // if (motor2 < ThrottleIdle)
+  //   motor2 = ThrottleIdle;
 
-  if (motor3 < ThrottleIdle)
-    motor3 = ThrottleIdle;
+  // if (motor3 < ThrottleIdle)
+  //   motor3 = ThrottleIdle;
 
-  if (motor4 < ThrottleIdle)
-    motor4 = ThrottleIdle;
+  // if (motor4 < ThrottleIdle)
+  //   motor4 = ThrottleIdle;
 
-  int ThrottleCutOff = 1000;
+  // int ThrottleCutOff = 1000;
 
-  if (ReceiverValue[2] < 1050)
-  {
-    motor1 = ThrottleCutOff;
-    motor2 = ThrottleCutOff;
-    motor3 = ThrottleCutOff;
-    motor4 = ThrottleCutOff;
-    reset_pid();
-  }
-  analogWrite(1, motor1);
-  analogWrite(2, motor2);
-  analogWrite(3, motor3);
-  analogWrite(4, motor4);
+  // if (ReceiverValue[2] < 1050)
+  // {
+  //   motor1 = ThrottleCutOff;
+  //   motor2 = ThrottleCutOff;
+  //   motor3 = ThrottleCutOff;
+  //   motor4 = ThrottleCutOff;
+  //   reset_pid();
+  // }
+
+  // analogWrite(1, motor1);
+  // analogWrite(2, motor2);
+  // analogWrite(3, motor3);
+  // analogWrite(4, motor4);
+
+  while(micros() - timer < 4000);
+  timer = micros();
 }
