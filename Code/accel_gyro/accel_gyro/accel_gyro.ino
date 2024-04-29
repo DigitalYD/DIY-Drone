@@ -90,23 +90,27 @@ void loop()
   RateRoll-=RateCalibrationRoll;
   RatePitch-=RateCalibrationPitch;
   RateYaw-=RateCalibrationYaw;
-  Serial.print("Roll rate [°/s]= ");
-  Serial.print(RateRoll); 
-  Serial.print(" Pitch Rate [°/s]= ");
-  Serial.print(RatePitch);
-  Serial.print(" Yaw Rate [°/s]= ");
-  Serial.println(RateYaw);
-  delay(50);
+  // Serial.print("Roll rate [°/s]= ");
+  // Serial.print(RateRoll); 
+  // Serial.print(" Pitch Rate [°/s]= ");
+  // Serial.print(RatePitch);
+  // Serial.print(" Yaw Rate [°/s]= ");
+  // Serial.println(RateYaw);
+  // delay(50);
 
+  // Serial.print("Acceleration: ");
   // Serial.print(accel.acceleration.x);
   // Serial.print(","); Serial.print(accel.acceleration.y);
   // Serial.print(","); Serial.print(accel.acceleration.z);
   // Serial.print(",");
 
+  // Serial.print("Gyroscope: ");
   // Serial.print(gyro.gyro.x);
   // Serial.print(","); Serial.print(gyro.gyro.y);
   // Serial.print(","); Serial.print(gyro.gyro.z);
   // Serial.println();
+
+  delay(1000);
   //  delayMicroseconds(10000);
 }
 

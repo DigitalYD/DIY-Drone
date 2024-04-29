@@ -22,7 +22,7 @@
 #include <Adafruit_MPL3115A2.h>
 
 Adafruit_MPL3115A2 baro;
-
+float start_value;
 void setup() {
   Serial.begin(115200);
   while (!Serial)
@@ -35,15 +35,19 @@ void setup() {
       ;
   }
 
+  start_value = baro.getAltitude();
   // use to set sea level pressure for current location
   // this is needed for accurate altitude measurement
   // STD SLP = 1013.26 hPa
   baro.setSeaPressure(1013.26);
+
+  
 }
 
 void loop() {
   float pressure = baro.getPressure();
-  float altitude = baro.getAltitude();
+  float altitude = baro.getAltitude() - start_value;
+;
   float temperature = baro.getTemperature();
 
   Serial.println("-----------------");
@@ -57,5 +61,5 @@ void loop() {
   Serial.print(temperature);
   Serial.println(" C");
 
-  delay(250);
+  delay(50);
 }

@@ -1,8 +1,3 @@
-/* NOTIC: all of this code is from Carbon Aeronautics
-  * https://github.com/CarbonAeronautics 
-  */
-
-
 #include <PulsePosition.h>
 PulsePositionInput ReceiverInput(RISING);
 float ReceiverValue[]={0, 0, 0, 0, 0, 0, 0, 0};
