@@ -1,6 +1,9 @@
-/* NOTIC: all of code for the receiver to connect to the teensy
- * from Carbon Aeronautics
+/* Notice: this code is referenced from youtube and other materials
  * https://github.com/CarbonAeronautics
+ * https://www.adafruit.com/product/4517
+ * https://github.com/dbcarelli/teensy-kalman
+ * https://www.youtube.com/watch?v=ruB917YmtgE
+ * https://github.com/adafruit/Adafruit_MPL3115A2_Library
  */
 
 #include <PulsePosition.h>
@@ -21,8 +24,8 @@ float motor1, motor2, motor3, motor4;
 
 // pid values
 float RatePitch, RateRoll, RateYaw;
-float CalibrationPitch, CalibrationRoll, CalibrationYaw;
-int RateCalibrationNumber;
+float CalibrateP, CalibrateR, CalibrateY;
+int CalibrateNum;
 
 uint32_t timer;
 
@@ -30,38 +33,44 @@ float DesiredPitch, DesiredRoll, DesiredYaw;
 float ErrorPitch, ErrorRoll, ErrorYaw;
 float Throttle, Pitch, Roll, Yaw;
 float PrevErrorPitch, PrevErrorRoll, PrevErrorYaw;
-float PrevITermPitch, PrevITermRoll, PrevITermYaw;
+float PrevIPitch, PrevIRoll, PrevIYaw;
 float PIDReturn[] = {0, 0, 0};
 
-float PRateRoll = 0.6;
-float PRatePitch = PRateRoll;
-float PRateYaw = 2;
-float IRateRoll = 3.5;
-float IRatePitch = IRateRoll;
-float IRateYaw = 12;
-float DRateRoll = 0.03;
-float DRatePitch = DRateRoll;
-float DRateYaw = 0;
+float PRoll = 5;
+float PPitch = PRoll;
+float PYaw = 2;
+float IRoll = 1.5;
+float IPitch = IRoll;
+float IYaw = 10;
+float DRoll = 0.03;
+float DPitch = DRoll;
+float DYaw = 0;
 
 // imu
 float AccX, AccY, AccZ;
 float AngleRoll, AnglePitch;
 
 // Kalman Filters
-float KalmanAngleRoll=0, KalmanUncertaintyAngleRoll=2*2;
-float KalmanAnglePitch=0, KalmanUncertaintyAnglePitch=2*2;
-float Kalman1DOutput[]={0,0};
+float Kr=0, Kr_uncertain=2*3;
+float Ka=0, Ka_uncertain=2*3;
+float K_result[]={0,0};
 
-void kalman_1d(float KalmanState, float KalmanUncertainty, float KalmanInput, float KalmanMeasurement) {
-  KalmanState=KalmanState+0.004*KalmanInput;
-  KalmanUncertainty=KalmanUncertainty + 0.004 * 0.004 * 4 * 4;
-  float KalmanGain=KalmanUncertainty * 1/(1*KalmanUncertainty + 3 * 3);
-  KalmanState=KalmanState+KalmanGain * (KalmanMeasurement-KalmanState);
-  KalmanUncertainty=(1-KalmanGain) * KalmanUncertainty;
-  Kalman1DOutput[0]=KalmanState; 
-  Kalman1DOutput[1]=KalmanUncertainty;
+/* the kalman filter is a type of digital filter
+ * where it would take in the input and based on that 
+ * it would predict the next state 
+ * with this filter it should reduce the noise caused by the motors
+ * and other natural properties*/
+void kalman_filter(float k_state, float k_uncertain, float k_in, float k_measured) {
+  k_state=k_state+0.004*k_in;
+  k_uncertain=k_uncertain + 0.004 * 0.004 * 4 * 4;
+  float k_g=k_uncertain * 1/(1*k_uncertain + 3 * 3);
+  k_state=k_state+k_g * (k_measured-k_state);
+  k_uncertain=(1-k_g) * k_uncertain;
+  K_result[0]=k_state; 
+  K_result[1]=k_uncertain;
 }
 
+/* this is the function for reading in the remote commands */
 void read_receiver(void)
 {
   ChannelNumber = ReceiverInput.available();
@@ -72,31 +81,43 @@ void read_receiver(void)
       ReceiverValue[i - 1] = ReceiverInput.read(i);
     }
   }
+
+  Serial.print("Number of channels: ");
+  Serial.print(ChannelNumber);
+  Serial.print(" Roll [µs]: ");
+  Serial.print(ReceiverValue[0]);
+  Serial.print(" Pitch [µs]: ");
+  Serial.print(ReceiverValue[1]);
+  Serial.print(" Throttle [µs]: ");
+  Serial.print(ReceiverValue[2]);
+  Serial.print(" Yaw [µs]: ");
+  Serial.println(ReceiverValue[3]);
 }
 
+/* calling this function to get the altitude
+ * abandoned due to no accurate altitude and 
+ * causes a mysterious delay */
 void read_barometer(void)
 {
   float altitude = baro.getAltitude();
 
 }
 
+/* this is the function for reading the LSM6DSOX sensor
+ * the value that are read is stored and calculates the 
+ * AngleRoll and AnglePitch that is used for later */
 void read_imu(void)
 {
-  //  /* Get a new normalized sensor event */
+  /* Get a new normalized sensor event */
   sensors_event_t accel;
   sensors_event_t gyro;
   sensors_event_t temp;
 
-  // there is a error in the template where the gyro and accelerometer values are swapped
   sox.getEvent(&accel, &gyro, &temp);
 
-  int16_t GyroX=gyro.gyro.x;
-  int16_t GyroY=gyro.gyro.y;
-  int16_t GyroZ=gyro.gyro.z;
-
-  RateRoll=(float)GyroX;
-  RatePitch=(float)GyroY;
-  RateYaw=(float)GyroZ;
+  RateRoll=(float)gyro.gyro.x;
+  RatePitch=(float)gyro.gyro.y;
+  RateYaw=(float)gyro.gyro.z;
 
   AccX=(float)accel.acceleration.x;
   AccY=(float)accel.acceleration.y;
@@ -117,36 +138,21 @@ void read_imu(void)
 
 }
 
-// setting the motor control TX -> Teensy -> Motor
-void controller(void)
-{
-  read_receiver();
-  Serial.print("Number of channels: ");
-  Serial.print(ChannelNumber);
-  Serial.print(" Roll [µs]: ");
-  Serial.print(ReceiverValue[0]);
-  Serial.print(" Pitch [µs]: ");
-  Serial.print(ReceiverValue[1]);
-  Serial.print(" Throttle [µs]: ");
-  Serial.print(ReceiverValue[2]);
-  Serial.print(" Yaw [µs]: ");
-  Serial.println(ReceiverValue[3]);
-}
-
 void pid_controller(float Error, float P, float I, float D, float PrevError, float PrevIterm)
 {
   float Pterm = P * Error;
   float Iterm = PrevIterm + I * (Error + PrevError) * 0.004 / 2;
-  if (Iterm > 400)
-    Iterm = 400;
-  else if (Iterm < -400)
-    Iterm = -400;
+  if (Iterm > 500)
+    Iterm = 500;
+  else if (Iterm < -500)
+    Iterm = -500;
   float Dterm = D * (Error - PrevError) / 0.004;
   float PIDOutput = Pterm + Iterm + Dterm;
-  if (PIDOutput > 400)
-    PIDOutput = 400;
-  else if (PIDOutput < -400)
-    PIDOutput = -400;
+  if (PIDOutput > 500)
+    PIDOutput = 500;
+  else if (PIDOutput < -500)
+    PIDOutput = -500;
+
   PIDReturn[0] = PIDOutput;
   PIDReturn[1] = Error;
   PIDReturn[2] = Iterm;
@@ -157,9 +163,9 @@ void reset_pid(void)
   PrevErrorRoll = 0;
   PrevErrorPitch = 0;
   PrevErrorYaw = 0;
-  PrevITermRoll = 0;
-  PrevITermPitch = 0;
-  PrevITermYaw = 0;
+  PrevIRoll = 0;
+  PrevIPitch = 0;
+  PrevIYaw = 0;
 }
 
 void setup()
@@ -225,13 +231,12 @@ void setup()
   // start reading from the signal line of the reciever at PIN 15
   ReceiverInput.begin(15);
 
-  // send PWM to the motor
-
-  // analogWriteFrequency(PIN, FREQ)
+  =
   // set the PIN to send out and the frequency of the signal
-  CalibrationRoll /= 2000;
-  CalibrationPitch /= 2000;
-  CalibrationYaw /= 2000;
+  CalibrateR /= 2000;
+  CalibrateP /= 2000;
+  CalibrateY /= 2000;
+
   analogWriteFrequency(1, 250);
   analogWriteFrequency(2, 250);
   analogWriteFrequency(3, 250);
@@ -239,9 +244,6 @@ void setup()
 
   // analogWriteResolution(bits)
   analogWriteResolution(12);
-
-  // delay
-  // delay(250);
 
   // reading the throttle of the remote
   while (ReceiverValue[2] < 1020 || ReceiverValue[2] > 1050)
@@ -258,96 +260,95 @@ void loop()
   // the barometer has delay issues
   // read_barometer();
   read_imu();
-  RateRoll -= CalibrationRoll;
-  RatePitch -= CalibrationPitch;
-  RateYaw -= CalibrationYaw;
+  RateRoll -= CalibrateR;
+  RatePitch -= CalibrateP;
+  RateYaw -= CalibrateY;
 
-  // read_receiver();
-  // controller();
+  read_receiver();
 
-  kalman_1d(KalmanAngleRoll, KalmanUncertaintyAngleRoll, RateRoll, AngleRoll);
-  KalmanAngleRoll=Kalman1DOutput[0]; 
-  KalmanUncertaintyAngleRoll=Kalman1DOutput[1];
-  kalman_1d(KalmanAnglePitch, KalmanUncertaintyAnglePitch, RatePitch, AnglePitch);
-  KalmanAnglePitch=Kalman1DOutput[0]; 
-  KalmanUncertaintyAnglePitch=Kalman1DOutput[1];
+  kalman_filter(Kr, Kr_uncertain, RateRoll, AngleRoll);
+  Kr=K_result[0]; 
+  Kr_uncertain=K_result[1];
+  kalman_filter(Ka, Ka_uncertain, RatePitch, AnglePitch);
+  Ka=K_result[0]; 
+  Ka_uncertain=K_result[1];
   Serial.print("Roll Angle [°] ");
-  Serial.print(KalmanAngleRoll);
+  Serial.print(Kr);
   Serial.print(" Pitch Angle [°] ");
-  Serial.println(KalmanAnglePitch);
+  Serial.println(Ka);
 
-  // DesiredRoll = 0.15 * (ReceiverValue[0] - 1500);
-  // DesiredPitch = 0.15 * (ReceiverValue[1] - 1500);
-  // Throttle = ReceiverValue[2];
-  // DesiredYaw = 0.15 * (ReceiverValue[3] - 1500);
+  DesiredRoll = 0.15 * (ReceiverValue[0] - 1500);
+  DesiredPitch = 0.15 * (ReceiverValue[1] - 1500);
+  Throttle = ReceiverValue[2];
+  DesiredYaw = 0.15 * (ReceiverValue[3] - 1500);
 
-  // ErrorRoll = DesiredRoll - RateRoll;
-  // ErrorPitch = DesiredPitch - RatePitch;
-  // ErrorYaw = DesiredYaw - RateYaw;
+  ErrorRoll = DesiredRoll - RateRoll;
+  ErrorPitch = DesiredPitch - RatePitch;
+  ErrorYaw = DesiredYaw - RateYaw;
 
-  // pid_controller(ErrorRoll, PRateRoll, IRateRoll, DRateRoll, PrevErrorRoll, PrevITermRoll);
-  // Roll = PIDReturn[0];
-  // PrevErrorRoll = PIDReturn[1];
-  // PrevITermRoll = PIDReturn[2];
-  // pid_controller(ErrorPitch, PRatePitch, IRatePitch, DRatePitch, PrevITermPitch, PrevITermPitch);
-  // Pitch = PIDReturn[0];
-  // PrevErrorPitch = PIDReturn[1];
-  // PrevITermPitch = PIDReturn[2];
-  // pid_controller(ErrorYaw, PRateYaw, IRateYaw, DRateYaw, PrevErrorYaw, PrevITermYaw);
-  // Yaw = PIDReturn[0];
-  // PrevErrorYaw = PIDReturn[1];
-  // PrevITermYaw = PIDReturn[2];
+  pid_controller(ErrorRoll, PRoll, IRoll, DRoll, PrevErrorRoll, PrevIRoll);
+  Roll = PIDReturn[0];
+  PrevErrorRoll = PIDReturn[1];
+  PrevIRoll = PIDReturn[2];
+  pid_controller(ErrorPitch, PPitch, IPitch, DPitch, PrevIPitch, PrevIPitch);
+  Pitch = PIDReturn[0];
+  PrevErrorPitch = PIDReturn[1];
+  PrevIPitch = PIDReturn[2];
+  pid_controller(ErrorYaw, PYaw, IYaw, DYaw, PrevErrorYaw, PrevIYaw);
+  Yaw = PIDReturn[0];
+  PrevErrorYaw = PIDReturn[1];
+  PrevIYaw = PIDReturn[2];
 
-  // if (Throttle > 1400){
-  //   Throttle = 1400;
-  // }
+  if (Throttle > 1400){
+    Throttle = 1400;
+  }
 
-  // motor1 = 1.024 * (Throttle - Roll - Pitch - Yaw);
-  // motor2 = 1.024 * (Throttle - Roll + Pitch + Yaw);
-  // motor3 = 1.024 * (Throttle + Roll + Pitch - Yaw);
-  // motor4 = 1.024 * (Throttle + Roll - Pitch + Yaw);
+  motor1 = 1.024 * (Throttle - Roll - Pitch - Yaw);
+  motor2 = 1.024 * (Throttle - Roll + Pitch + Yaw);
+  motor3 = 1.024 * (Throttle + Roll + Pitch - Yaw);
+  motor4 = 1.024 * (Throttle + Roll - Pitch + Yaw);
   
-  // if (motor1 > 2000)
-  //   motor1 = 1999;
+  if (motor1 > 2000)
+    motor1 = 1999;
 
-  // if (motor2 > 2000)
-  //   motor2 = 1999;
+  if (motor2 > 2000)
+    motor2 = 1999;
 
-  // if (motor3 > 2000)
-  //   motor3 = 1999;
+  if (motor3 > 2000)
+    motor3 = 1999;
 
-  // if (motor4 > 2000)
-  //   motor4 = 1999;
+  if (motor4 > 2000)
+    motor4 = 1999;
 
-  // int ThrottleIdle = 1180;
+  int IdleMode = 1180;
 
-  // if (motor1 < ThrottleIdle)
-  //   motor1 = ThrottleIdle;
+  if (motor1 < IdleMode)
+    motor1 = IdleMode;
 
-  // if (motor2 < ThrottleIdle)
-  //   motor2 = ThrottleIdle;
+  if (motor2 < IdleMode)
+    motor2 = IdleMode;
 
-  // if (motor3 < ThrottleIdle)
-  //   motor3 = ThrottleIdle;
+  if (motor3 < IdleMode)
+    motor3 = IdleMode;
 
-  // if (motor4 < ThrottleIdle)
-  //   motor4 = ThrottleIdle;
+  if (motor4 < IdleMode)
+    motor4 = IdleMode;
 
-  // int ThrottleCutOff = 1000;
+  int CutOff = 1000;
 
-  // if (ReceiverValue[2] < 1050)
-  // {
-  //   motor1 = ThrottleCutOff;
-  //   motor2 = ThrottleCutOff;
-  //   motor3 = ThrottleCutOff;
-  //   motor4 = ThrottleCutOff;
-  //   reset_pid();
-  // }
+  if (ReceiverValue[2] < 1050)
+  {
+    motor1 = CutOff;
+    motor2 = CutOff;
+    motor3 = CutOff;
+    motor4 = CutOff;
+    reset_pid();
+  }
 
-  // analogWrite(1, motor1);
-  // analogWrite(2, motor2);
-  // analogWrite(3, motor3);
-  // analogWrite(4, motor4);
+  analogWrite(1, motor1);
+  analogWrite(2, motor2);
+  analogWrite(3, motor3);
+  analogWrite(4, motor4);
 
   while(micros() - timer < 4000);
   timer = micros();

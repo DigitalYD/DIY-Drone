@@ -24,7 +24,8 @@ Right after bop-it had finished, I started getting some data from the receiver, 
 
 ## Preliminary Design Vefificaiton 
 I breadboarded all of the circuit for the flight controller.
-![alt text](<Images and Video/IMG_8458.jpg>)<center>Figure 2</center>
+![alt text](<Images and Video/IMG_8458.jpg>)
+<center>Figure 2</center> <br>
 On the breadboard is the from top to the bottom are the receiver, MPL3115A2, LSM6DSOX and Teensy 4.1. 
 
 The test plan was to plug it into the Teensy and check if the values read in and check those values in the serial monitor from the Arduino IDE. 
@@ -32,14 +33,19 @@ The test plan was to plug it into the Teensy and check if the values read in and
 For the LSM6DSOX: https://youtu.be/Ty-h-1SDryA
 This works and it is very responsive.
 
-For the MPL3115A2: ![alt text](<Images and Video\IMG_8468.jpg>)<center>Figure 3</center>
+For the MPL3115A2: 
+![alt text](<Images and Video\IMG_8468.jpg>)
+<center>Figure 3</center><br>
 
 
 ## Design Implementation
-The Final design of the drone project was all breadboarded because of the time constraints and getting everything to work together.
-![alt text](<Images and Video\IMG_8442.jpg>)<center>Figure 4</center>
+The Final design of the drone project was all breadboarded because of the time constraints and getting everything to work together.<br>
 
-![alt text](<Images and Video\IMG_8441.jpg>)<center>Figure 5</center>
+![alt text](<Images and Video\IMG_8442.jpg>)
+<center>Figure 4</center>
+
+![alt text](<Images and Video\IMG_8441.jpg>)
+<center>Figure 5</center>
 
 As shown in Fig. 3 the breadboad (flight controller) is zip tied to the cassy of the drone. All the electronic speed controllers (ESC) are connected to the pins 1-4, which are PWM pins. 
 
