@@ -58,6 +58,7 @@ For the receiver, I had no issues with it, even during the integration, as it pr
 
 Overall, the motors did spin, and only the roll worked as expected, while the pith and yaw of the motors did not. The issue can be software because the ESC depends on the PWM signal the teensy sends. It would either be the PID controller causing the motors to not respond to the change in the commands or the filter. This suspicion was based on the receiver getting the commands for the pitch and yaw change. However, it is not changing on the motors. During the debugging phase, I saw that the PWM output was changing according to the joystick, but it was not getting to the motor correctly. 
 
+I have implement my a filter but it did not work properly and PID controller so I use YouTube as reference and it
 ## Summary, Conclusions and Future Work
 In conclusion, I have learned a lot about implementing I2C and SPI communication. I learned how to apply a digital filter and make a PID controller from there. However, I could not get the drone to have full functionality. I was able to get the drone to respond to some commands. 
 
